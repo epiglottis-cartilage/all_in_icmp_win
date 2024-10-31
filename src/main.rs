@@ -8,21 +8,17 @@ const PROTO_UDP: u8 = 0x11;
 fn calculate_checksum(buffer: &[u8]) -> u16 {
     let mut sum = 0u32;
     let mut i = 0;
-
     while i < buffer.len() - 1 {
         let word = u16::from_be_bytes([buffer[i], buffer[i + 1]]);
         sum = sum.wrapping_add(u32::from(word));
         i += 2;
     }
-
     if buffer.len() % 2 == 1 {
         sum = sum.wrapping_add(u32::from(buffer[buffer.len() - 1]) << 8);
     }
-
     while (sum >> 16) != 0 {
         sum = (sum & 0xffff) + (sum >> 16);
     }
-
     !(sum as u16)
 }
 
@@ -44,7 +40,6 @@ fn add_wrapper(packet: &mut [u8]) {
         _ => unreachable!("Can only wrap TCP or UDP packets"),
     }
     packet[9] = PROTO_ICMP; // Protocol (ICMP)
-                            // put_checksum(&mut packet[..20], 10);
     put_checksum(&mut packet[..20], 10);
 }
 
@@ -103,7 +98,7 @@ fn display(packet: &[u8]) {
 
 fn handle_in() {
     let inbound = WinDivert::network(
-        "inbound and (icmp) and ip and remoteAddr >= 10.161.0.0 and remoteAddr < 10.162.0.0",
+        "inbound and ip and ((remoteAddr >= 10.161.0.0 and remoteAddr < 10.162.0.0)or(remoteAddr >= 10.211.0.0 and remoteAddr < 10.212.0.0))",
         0,
         WinDivertFlags::new(),
     )
@@ -125,7 +120,7 @@ fn handle_in() {
 }
 fn handle_out() {
     let outbound = WinDivert::network(
-        "outbound and (tcp or udp) and remoteAddr >= 10.161.0.0 and remoteAddr < 10.162.0.0",
+        "outbound and ip and ((remoteAddr >= 10.161.0.0 and remoteAddr < 10.162.0.0)or(remoteAddr >= 10.211.0.0 and remoteAddr < 10.212.0.0))",
         0,
         WinDivertFlags::new(),
     )
