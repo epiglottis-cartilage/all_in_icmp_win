@@ -108,11 +108,11 @@ fn display(packet: &[u8]) {
 
 fn handle() {
     let filter = WinDivert::network(
-        "ip and ((remoteAddr >= 10.161.0.0 and remoteAddr < 10.162.0.0)or(remoteAddr >= 10.211.0.0 and remoteAddr < 10.212.0.0))",
+        String::from_utf8(std::fs::read("filter.cfg").expect("Cannot read filter.cfg")).unwrap(),
         0,
         WinDivertFlags::new().set_fragments(),
     )
-    .unwrap();
+    .expect("Run as admin?");
     loop {
         // Receive a packet
         let mut buffer = [0u8; 65536];

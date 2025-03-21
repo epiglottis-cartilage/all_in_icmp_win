@@ -1,8 +1,11 @@
 [package]
 name = "all-in-icmp-win"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 
 [dependencies]
 windivert = "0.6.0"
 windivert-sys = "*"
+
+[profile.release]
+opt-level = 3
