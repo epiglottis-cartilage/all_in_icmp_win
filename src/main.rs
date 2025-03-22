@@ -1,5 +1,7 @@
+#![feature(ip_from)]
 use windivert::prelude::{WinDivert, WinDivertFlags};
 use windivert_sys::ChecksumFlags;
+
 mod ipv4 {
     const PROTO_ICMP: u8 = 0x1;
     const PROTO_TCP: u8 = 0x6;
@@ -20,10 +22,9 @@ mod ipv4 {
             0x00 => {
                 packet[9] = PROTO_TCP;
             }
-            0x80 => {
+            _ => {
                 packet[9] = PROTO_UDP;
             }
-            _ => unreachable!("Unknown mark {:X}", packet[6]),
         }
         packet[6] &= !0x80;
     }
@@ -41,10 +42,10 @@ mod ipv4 {
     }
 
     fn display(packet: &[u8]) {
-        use std::net::Ipv4Addr;
-        let src = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
-        let dst = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
+        use std::net::{Ipv4Addr, SocketAddrV4};
 
+        let src = Ipv4Addr::from_octets(*packet[12..].first_chunk().unwrap());
+        let dst = Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
         match packet[9] {
             PROTO_ICMP => {
                 print!(
@@ -59,18 +60,14 @@ mod ipv4 {
                 );
             }
             PROTO_TCP => {
-                let src =
-                    std::net::SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
-                let dst =
-                    std::net::SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
+                let src = SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
+                let dst = SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
                 print!("TCP  {:>20} -> {:<20}", src, dst);
             }
             PROTO_UDP => {
-                let src =
-                    std::net::SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
-                let dst =
-                    std::net::SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
-                print!("TCP  {:>20} -> {:<20}", src, dst);
+                let src = SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
+                let dst = SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
+                print!("UDP  {:>20} -> {:<20}", src, dst);
             }
             _ => {
                 print!("Unknown protocol {:X}", packet[9]);
@@ -133,27 +130,9 @@ mod ipv6 {
     }
 
     fn display(packet: &[u8]) {
-        use std::net::Ipv6Addr;
-        let src = Ipv6Addr::new(
-            (packet[8] as u16) << 8 | packet[9] as u16,
-            (packet[10] as u16) << 8 | packet[11] as u16,
-            (packet[12] as u16) << 8 | packet[13] as u16,
-            (packet[14] as u16) << 8 | packet[15] as u16,
-            (packet[16] as u16) << 8 | packet[17] as u16,
-            (packet[18] as u16) << 8 | packet[19] as u16,
-            (packet[20] as u16) << 8 | packet[21] as u16,
-            (packet[22] as u16) << 8 | packet[23] as u16,
-        );
-        let dst = Ipv6Addr::new(
-            (packet[24] as u16) << 8 | packet[25] as u16,
-            (packet[26] as u16) << 8 | packet[27] as u16,
-            (packet[28] as u16) << 8 | packet[29] as u16,
-            (packet[30] as u16) << 8 | packet[31] as u16,
-            (packet[32] as u16) << 8 | packet[33] as u16,
-            (packet[34] as u16) << 8 | packet[35] as u16,
-            (packet[36] as u16) << 8 | packet[37] as u16,
-            (packet[38] as u16) << 8 | packet[39] as u16,
-        );
+        use std::net::{Ipv6Addr, SocketAddrV6};
+        let src = Ipv6Addr::from_octets(*packet[8..].first_chunk().unwrap());
+        let dst = Ipv6Addr::from_octets(*packet[24..].first_chunk().unwrap());
 
         match packet[6] {
             PROTO_ICMPV6 => {
@@ -169,17 +148,17 @@ mod ipv6 {
                 );
             }
             PROTO_TCP => {
-                let src_port = u16::from_be_bytes([packet[24], packet[25]]);
-                let dst_port = u16::from_be_bytes([packet[26], packet[27]]);
-                let src = std::net::SocketAddrV6::new(src, src_port, 0, 0);
-                let dst = std::net::SocketAddrV6::new(dst, dst_port, 0, 0);
+                let src =
+                    SocketAddrV6::new(src, u16::from_be_bytes([packet[24], packet[25]]), 0, 0);
+                let dst =
+                    SocketAddrV6::new(dst, u16::from_be_bytes([packet[26], packet[27]]), 0, 0);
                 print!("TCP  {:>46} -> {:<46}", src, dst);
             }
             PROTO_UDP => {
-                let src_port = u16::from_be_bytes([packet[24], packet[25]]);
-                let dst_port = u16::from_be_bytes([packet[26], packet[27]]);
-                let src = std::net::SocketAddrV6::new(src, src_port, 0, 0);
-                let dst = std::net::SocketAddrV6::new(dst, dst_port, 0, 0);
+                let src =
+                    SocketAddrV6::new(src, u16::from_be_bytes([packet[24], packet[25]]), 0, 0);
+                let dst =
+                    SocketAddrV6::new(dst, u16::from_be_bytes([packet[26], packet[27]]), 0, 0);
                 print!("UDP  {:>46} -> {:<46}", src, dst);
             }
             _ => {
