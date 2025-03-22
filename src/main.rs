@@ -7,6 +7,8 @@ use std::{
 use windivert::prelude::{WinDivert, WinDivertFlags};
 use windivert_sys::ChecksumFlags;
 
+static mut DISPLAY_CD: isize = 0;
+
 mod ipv4 {
     use std::net::{Ipv4Addr, SocketAddrV4};
 
@@ -55,6 +57,14 @@ mod ipv4 {
     }
 
     fn display(packet: &[u8]) {
+        unsafe {
+            use super::DISPLAY_CD;
+            if DISPLAY_CD < 0 {
+                return;
+            } else {
+                DISPLAY_CD -= 1;
+            }
+        }
         let src = Ipv4Addr::from_octets(*packet[12..].first_chunk().unwrap());
         let dst = Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
         match packet[9] {
@@ -157,6 +167,14 @@ mod ipv6 {
     }
 
     fn display(packet: &[u8]) {
+        unsafe {
+            use super::DISPLAY_CD;
+            if DISPLAY_CD < 0 {
+                return;
+            } else {
+                DISPLAY_CD -= 1;
+            }
+        }
         let src = Ipv6Addr::from_octets(*packet[8..].first_chunk().unwrap());
         let dst = Ipv6Addr::from_octets(*packet[24..].first_chunk().unwrap());
 
@@ -222,7 +240,7 @@ fn handle(broadcast4: Option<Ipv4Addr>, broadcast6: Option<Ipv6Addr>) {
     )
     .expect("Run as admin?");
     #[allow(invalid_value)]
-    let mut buffer: [u8; 65535] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
+    let mut buffer: [u8; 9001] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     loop {
         // Receive a packet
         let mut packet = filter.recv(Some(&mut buffer)).unwrap().to_owned();
@@ -251,6 +269,13 @@ fn main() {
         });
     println!("IPv4 broadcast to {:?}", broadcast4);
     println!("IPv6 broadcast to {:?}", broadcast6);
-    
+    std::thread::spawn(|| {
+        loop {
+            unsafe {
+                DISPLAY_CD = 8;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    });
     handle(broadcast4, broadcast6);
 }
