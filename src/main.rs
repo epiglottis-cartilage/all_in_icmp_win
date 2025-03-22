@@ -1,8 +1,15 @@
 #![feature(ip_from)]
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+};
+
 use windivert::prelude::{WinDivert, WinDivertFlags};
 use windivert_sys::ChecksumFlags;
 
 mod ipv4 {
+    use std::net::{Ipv4Addr, SocketAddrV4};
+
     const PROTO_ICMP: u8 = 0x1;
     const PROTO_TCP: u8 = 0x6;
     const PROTO_UDP: u8 = 0x11;
@@ -41,9 +48,13 @@ mod ipv4 {
             && !(packet[21] == 0 && (packet[20] == 0 || packet[20] == 8))
     }
 
-    fn display(packet: &[u8]) {
-        use std::net::{Ipv4Addr, SocketAddrV4};
+    #[inline]
+    fn is_broadcast(packet: &[u8]) -> bool {
+        let dst = std::net::Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
+        dst.octets()[3] == 255
+    }
 
+    fn display(packet: &[u8]) {
         let src = Ipv4Addr::from_octets(*packet[12..].first_chunk().unwrap());
         let dst = Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
         match packet[9] {
@@ -75,12 +86,20 @@ mod ipv4 {
         }
         println!("\tlen:[{}]", packet.len());
     }
-    pub fn handle(packet: &mut [u8]) {
+    pub fn handle(packet: &mut [u8], broadcast: Option<Ipv4Addr>) {
         if is_wrapped(packet) {
             rm_wrapper(packet);
             display(packet);
         } else if should_warp(packet) {
             display(packet);
+            if is_broadcast(packet) {
+                if let Some(broadcast) = broadcast {
+                    packet[16] = broadcast.octets()[0];
+                    packet[17] = broadcast.octets()[1];
+                    packet[18] = broadcast.octets()[2];
+                    packet[19] = broadcast.octets()[3];
+                }
+            }
             add_wrapper(packet);
         } else {
             display(packet);
@@ -88,6 +107,8 @@ mod ipv4 {
     }
 }
 mod ipv6 {
+    use std::net::{Ipv6Addr, SocketAddrV6};
+
     const PROTO_ICMPV6: u8 = 0x3A;
     const PROTO_TCP: u8 = 0x6;
     const PROTO_UDP: u8 = 0x11;
@@ -129,8 +150,13 @@ mod ipv6 {
             && !(packet[41] == 0 && (packet[40] == 0 || packet[40] == 128))
     }
 
+    #[inline]
+    fn is_broadcast(packet: &[u8]) -> bool {
+        let dst = Ipv6Addr::from_octets(*packet[24..].first_chunk().unwrap());
+        dst.octets()[0] == 0xFF
+    }
+
     fn display(packet: &[u8]) {
-        use std::net::{Ipv6Addr, SocketAddrV6};
         let src = Ipv6Addr::from_octets(*packet[8..].first_chunk().unwrap());
         let dst = Ipv6Addr::from_octets(*packet[24..].first_chunk().unwrap());
 
@@ -168,32 +194,41 @@ mod ipv6 {
         println!("\tlen:[{}]", packet.len());
     }
 
-    pub fn handle(packet: &mut [u8]) {
+    pub fn handle(packet: &mut [u8], broadcast: Option<Ipv6Addr>) {
         if is_wrapped(packet) {
             rm_wrapper(packet);
             display(packet);
         } else if should_wrap(packet) {
             display(packet);
+            if is_broadcast(packet) {
+                if let Some(broadcast) = broadcast {
+                    packet[24..]
+                        .iter_mut()
+                        .zip(broadcast.octets().iter())
+                        .for_each(|(x, y)| *x = *y);
+                }
+            }
             add_wrapper(packet);
         } else {
             display(packet);
         }
     }
 }
-fn handle() {
+fn handle(broadcast4: Option<Ipv4Addr>, broadcast6: Option<Ipv6Addr>) {
     let filter = WinDivert::network(
         String::from_utf8(std::fs::read("filter.cfg").expect("Cannot read filter.cfg")).unwrap(),
         0,
         WinDivertFlags::new().set_fragments(),
     )
     .expect("Run as admin?");
+    #[allow(invalid_value)]
+    let mut buffer: [u8; 65535] = unsafe { std::mem::MaybeUninit::uninit().assume_init() };
     loop {
         // Receive a packet
-        let mut buffer = [0u8; 65536];
         let mut packet = filter.recv(Some(&mut buffer)).unwrap().to_owned();
         match packet.data[0] >> 4 {
-            4 => ipv4::handle(packet.data.to_mut()),
-            6 => ipv6::handle(packet.data.to_mut()),
+            4 => ipv4::handle(packet.data.to_mut(), broadcast4),
+            6 => ipv6::handle(packet.data.to_mut(), broadcast6),
             x @ _ => {
                 println!("Unknown IP protocol {}", x);
             }
@@ -206,5 +241,16 @@ fn handle() {
 }
 
 fn main() {
-    handle();
+    let mut broadcast4 = None;
+    let mut broadcast6 = None;
+    std::env::args()
+        .filter_map(|str| IpAddr::from_str(&str).ok())
+        .for_each(|addr| match addr {
+            IpAddr::V4(addr) => broadcast4 = Some(addr),
+            IpAddr::V6(addr) => broadcast6 = Some(addr),
+        });
+    println!("IPv4 broadcast to {:?}", broadcast4);
+    println!("IPv6 broadcast to {:?}", broadcast6);
+    
+    handle(broadcast4, broadcast6);
 }
