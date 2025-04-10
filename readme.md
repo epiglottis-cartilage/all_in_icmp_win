@@ -1,10 +1,9 @@
 ~~download [WinDivert binary packages](https://reqrypt.org/windivert.html) extract the zip file.~~
 
-
 ## CONFIG
 
 Then you can config the filter with the file. 
-For some case, you dnot need the part for IPv6
+For some case, you don't need the part for IPv6
 
 ## BROADCAST
 
@@ -28,3 +27,4 @@ for example:
 .\all-in-icmp-win.exe 10.161.114.514
 ```
 
+This will redirect all broadcast IPv4 packages to `10.161.114.514`
