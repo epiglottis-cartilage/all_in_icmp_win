@@ -7,8 +7,6 @@ use std::{
 use windivert::prelude::{WinDivert, WinDivertFlags};
 use windivert_sys::ChecksumFlags;
 
-static mut DISPLAY_CD: isize = 0;
-
 mod ipv4 {
     use std::net::{Ipv4Addr, SocketAddrV4};
 
@@ -55,21 +53,12 @@ mod ipv4 {
         let dst = std::net::Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
         dst.octets()[3] == 255
     }
-
     fn display(packet: &[u8]) {
-        unsafe {
-            use super::DISPLAY_CD;
-            if DISPLAY_CD < 0 {
-                return;
-            } else {
-                DISPLAY_CD -= 1;
-            }
-        }
         let src = Ipv4Addr::from_octets(*packet[12..].first_chunk().unwrap());
         let dst = Ipv4Addr::from_octets(*packet[16..].first_chunk().unwrap());
         match packet[9] {
             PROTO_ICMP => {
-                print!(
+                eprint!(
                     "ICMP {:>20} -> {:>20} {}",
                     src,
                     dst,
@@ -83,24 +72,26 @@ mod ipv4 {
             PROTO_TCP => {
                 let src = SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
                 let dst = SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
-                print!("TCP  {:>20} -> {:<20}", src, dst);
+                eprint!("TCP  {:>20} -> {:<20}", src, dst);
             }
             PROTO_UDP => {
                 let src = SocketAddrV4::new(src, u16::from_be_bytes([packet[20], packet[21]]));
                 let dst = SocketAddrV4::new(dst, u16::from_be_bytes([packet[22], packet[23]]));
-                print!("UDP  {:>20} -> {:<20}", src, dst);
+                eprint!("UDP  {:>20} -> {:<20}", src, dst);
             }
             _ => {
-                print!("Unknown protocol {:X}", packet[9]);
+                eprint!("Unknown protocol {:X}", packet[9]);
             }
         }
-        println!("\tlen:[{}]", packet.len());
+        eprintln!("\tlen:[{}]", packet.len());
     }
     pub fn handle(packet: &mut [u8], broadcast: Option<Ipv4Addr>) {
         if is_wrapped(packet) {
             rm_wrapper(packet);
+            #[cfg(debug_assertions)]
             display(packet);
         } else if should_warp(packet) {
+            #[cfg(debug_assertions)]
             display(packet);
             if is_broadcast(packet) {
                 if let Some(broadcast) = broadcast {
@@ -167,20 +158,12 @@ mod ipv6 {
     }
 
     fn display(packet: &[u8]) {
-        unsafe {
-            use super::DISPLAY_CD;
-            if DISPLAY_CD < 0 {
-                return;
-            } else {
-                DISPLAY_CD -= 1;
-            }
-        }
         let src = Ipv6Addr::from_octets(*packet[8..].first_chunk().unwrap());
         let dst = Ipv6Addr::from_octets(*packet[24..].first_chunk().unwrap());
 
         match packet[6] {
             PROTO_ICMPV6 => {
-                print!(
+                eprint!(
                     "ICMP {:>46} -> {:<46} {}",
                     src,
                     dst,
@@ -196,27 +179,29 @@ mod ipv6 {
                     SocketAddrV6::new(src, u16::from_be_bytes([packet[24], packet[25]]), 0, 0);
                 let dst =
                     SocketAddrV6::new(dst, u16::from_be_bytes([packet[26], packet[27]]), 0, 0);
-                print!("TCP  {:>46} -> {:<46}", src, dst);
+                eprint!("TCP  {:>46} -> {:<46}", src, dst);
             }
             PROTO_UDP => {
                 let src =
                     SocketAddrV6::new(src, u16::from_be_bytes([packet[24], packet[25]]), 0, 0);
                 let dst =
                     SocketAddrV6::new(dst, u16::from_be_bytes([packet[26], packet[27]]), 0, 0);
-                print!("UDP  {:>46} -> {:<46}", src, dst);
+                eprint!("UDP  {:>46} -> {:<46}", src, dst);
             }
             _ => {
-                print!("Unknown protocol {:X}", packet[6]);
+                eprint!("Unknown protocol {:X}", packet[6]);
             }
         }
-        println!("\tlen:[{}]", packet.len());
+        eprintln!("\tlen:[{}]", packet.len());
     }
 
     pub fn handle(packet: &mut [u8], broadcast: Option<Ipv6Addr>) {
         if is_wrapped(packet) {
             rm_wrapper(packet);
+            #[cfg(debug_assertions)]
             display(packet);
         } else if should_wrap(packet) {
+            #[cfg(debug_assertions)]
             display(packet);
             if is_broadcast(packet) {
                 if let Some(broadcast) = broadcast {
@@ -248,7 +233,7 @@ fn handle(broadcast4: Option<Ipv4Addr>, broadcast6: Option<Ipv6Addr>) {
             4 => ipv4::handle(packet.data.to_mut(), broadcast4),
             6 => ipv6::handle(packet.data.to_mut(), broadcast6),
             x @ _ => {
-                println!("Unknown IP protocol {}", x);
+                eprintln!("Unknown IP protocol {}", x);
             }
         }
         packet
@@ -267,15 +252,7 @@ fn main() {
             IpAddr::V4(addr) => broadcast4 = Some(addr),
             IpAddr::V6(addr) => broadcast6 = Some(addr),
         });
-    println!("IPv4 broadcast to {:?}", broadcast4);
-    println!("IPv6 broadcast to {:?}", broadcast6);
-    std::thread::spawn(|| {
-        loop {
-            unsafe {
-                DISPLAY_CD = 8;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
-    });
+    eprintln!("IPv4 broadcast to {:?}", broadcast4);
+    eprintln!("IPv6 broadcast to {:?}", broadcast6);
     handle(broadcast4, broadcast6);
 }
